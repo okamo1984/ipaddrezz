@@ -2,9 +2,19 @@ const std = @import("std");
 const math = std.math;
 const testing = std.testing;
 
+fn stringToUint8(s: []const u8) u8 {
+    var sum: u8 = 0;
+    for (s) |char| {
+        if (sum > 0) {
+            sum *= 10;
+        }
+        sum += (char - 48);
+    }
+    return sum;
+}
+
 fn ipv4ToDecimal(ipv4: []const u8) u32 {
     var shift: u8 = 0;
-    var digit: u8 = 0;
     var octet: u32 = 0;
     var sum: u32 = 0;
     for (ipv4) |char| {
@@ -12,15 +22,13 @@ fn ipv4ToDecimal(ipv4: []const u8) u32 {
             var real_shift = 8 * (3 - shift);
             sum += @shlExact(octet, @intCast(u5, real_shift));
             shift += 1;
-            digit = 0;
             octet = 0;
             continue;
         }
-        if (digit > 0) {
+        if (octet > 0) {
             octet *= 10;
         }
         octet += (char - 48);
-        digit += 1;
     }
     return sum + octet;
 }
@@ -34,13 +42,13 @@ fn getSection(decimal: u32, mask: u5) u8 {
 }
 
 fn createNetMask(comptime T: type, max: T, size: T) T {
-    return math.pow(T, 2, max) - math.pow(T, 2, 32 - size);
+    return math.pow(T, 2, max) - math.pow(T, 2, max - size);
 }
 
 pub fn cidrToIpv4Range(cidr: []const u8) [2][4]u8 {
     var split_it = std.mem.split(u8, cidr, "/");
     const ipaddress = split_it.next().?;
-    const netmask = ipv4ToDecimal(split_it.next() orelse "32");
+    const netmask = stringToUint8(split_it.next() orelse "32");
     const startDecimal = ipv4ToDecimal(ipaddress) & @truncate(u32, createNetMask(u33, 32, netmask));
     const endDecimal = math.pow(u32, 2, 32 - netmask) + startDecimal - 1;
     return [2][4]u8{ decimalToIpv4(startDecimal), decimalToIpv4(endDecimal) };
@@ -59,7 +67,7 @@ pub fn ipv4RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![][5
             }
             maxSize -= 1;
         }
-        const diff: u8 = 32 - @truncate(u8, @floatToInt(u8, math.log2(@intToFloat(f32, end - start + 1))));
+        const diff: u8 = 32 - @floatToInt(u8, math.log2(@intToFloat(f32, end - start + 1)));
         if (maxSize < diff) {
             maxSize = diff;
         }
