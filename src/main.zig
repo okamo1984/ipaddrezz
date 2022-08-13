@@ -2,6 +2,11 @@ const std = @import("std");
 const math = std.math;
 const testing = std.testing;
 
+const IPAddress = union(enum) {
+    v4: [4]u8,
+    v6: [8][4]u8,
+};
+
 fn stringToUint8(s: []const u8) u8 {
     var sum: u8 = 0;
     for (s) |char| {
@@ -33,8 +38,8 @@ fn ipv4ToDecimal(ipv4: []const u8) u32 {
     return sum + octet;
 }
 
-fn decimalToIpv4(decimal: u32) [4]u8 {
-    return .{ getIpv4Section(decimal, 24), getIpv4Section(decimal, 16), getIpv4Section(decimal, 8), getIpv4Section(decimal, 0) };
+fn decimalToIpv4(decimal: u32) IPAddress {
+    return .{ .v4 = .{ getIpv4Section(decimal, 24), getIpv4Section(decimal, 16), getIpv4Section(decimal, 8), getIpv4Section(decimal, 0) } };
 }
 
 fn getIpv4Section(decimal: u32, mask: u5) u8 {
@@ -45,40 +50,40 @@ fn createNetMask(comptime T: type, max: T, size: T) T {
     return math.pow(T, 2, max) - math.pow(T, 2, max - size);
 }
 
-const IPv4Range = struct {
-    start: [4]u8,
-    end: [4]u8,
+const IPAddressRange = struct {
+    start: IPAddress,
+    end: IPAddress,
 
-    pub fn init(start: [4]u8, end: [4]u8) IPv4Range {
-        return IPv4Range{
+    pub fn init(start: IPAddress, end: IPAddress) IPAddressRange {
+        return IPAddressRange{
             .start = start,
             .end = end,
         };
     }
 };
 
-pub fn cidrToIpv4Range(cidr: []const u8) IPv4Range {
+pub fn cidrToIpv4Range(cidr: []const u8) IPAddressRange {
     var split_it = std.mem.split(u8, cidr, "/");
     const ipaddress = split_it.next().?;
     const netmask = stringToUint8(split_it.next() orelse "32");
     const startDecimal = ipv4ToDecimal(ipaddress) & @truncate(u32, createNetMask(u33, 32, netmask));
     const endDecimal = math.pow(u32, 2, 32 - netmask) + startDecimal - 1;
-    return IPv4Range.init(decimalToIpv4(startDecimal), decimalToIpv4(endDecimal));
+    return IPAddressRange.init(decimalToIpv4(startDecimal), decimalToIpv4(endDecimal));
 }
 
-const IPv4Cidr = struct {
-    sections: [4]u8,
+const Cidr = struct {
+    sections: IPAddress,
     netmask: u8,
 
-    pub fn init(sections: [4]u8, netmask: u8) IPv4Cidr {
-        return IPv4Cidr{ .sections = sections, .netmask = netmask };
+    pub fn init(sections: IPAddress, netmask: u8) Cidr {
+        return Cidr{ .sections = sections, .netmask = netmask };
     }
 };
 
-pub fn ipv4RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]IPv4Cidr {
+pub fn ipv4RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]Cidr {
     var start = ipv4ToDecimal(range[0]);
     const end = ipv4ToDecimal(range[1]);
-    var cidr = std.ArrayList(IPv4Cidr).init(allocator);
+    var cidr = std.ArrayList(Cidr).init(allocator);
     while (end >= start) {
         var maxSize: u8 = 32;
         while (maxSize > 0) {
@@ -92,7 +97,7 @@ pub fn ipv4RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]IP
         if (maxSize < diff) {
             maxSize = diff;
         }
-        try cidr.append(IPv4Cidr.init(decimalToIpv4(start), maxSize));
+        try cidr.append(Cidr.init(decimalToIpv4(start), maxSize));
         start += @truncate(u32, math.pow(u33, 2, 32 - maxSize));
     }
 
@@ -127,8 +132,8 @@ fn getHex(char: u8) u8 {
     };
 }
 
-fn decimalToIpv6(decimal: u128) [8][4]u8 {
-    return .{ getIpv6Section(decimal, 112), getIpv6Section(decimal, 96), getIpv6Section(decimal, 80), getIpv6Section(decimal, 64), getIpv6Section(decimal, 48), getIpv6Section(decimal, 32), getIpv6Section(decimal, 16), getIpv6Section(decimal, 0) };
+fn decimalToIpv6(decimal: u128) IPAddress {
+    return .{ .v6 = .{ getIpv6Section(decimal, 112), getIpv6Section(decimal, 96), getIpv6Section(decimal, 80), getIpv6Section(decimal, 64), getIpv6Section(decimal, 48), getIpv6Section(decimal, 32), getIpv6Section(decimal, 16), getIpv6Section(decimal, 0) } };
 }
 
 fn getIpv6Section(decimal: u128, mask: u7) [4]u8 {
@@ -156,40 +161,19 @@ fn decimalToChar(decimal: u8) u8 {
     };
 }
 
-const IPv6Range = struct {
-    start: [8][4]u8,
-    end: [8][4]u8,
-
-    pub fn init(start: [8][4]u8, end: [8][4]u8) IPv6Range {
-        return IPv6Range{
-            .start = start,
-            .end = end,
-        };
-    }
-};
-
-pub fn cidrToIpv6Range(cidr: []const u8) IPv6Range {
+pub fn cidrToIpv6Range(cidr: []const u8) IPAddressRange {
     var split_it = std.mem.split(u8, cidr, "/");
     const ipaddress = split_it.next().?;
     const netmask = stringToUint8(split_it.next() orelse "128");
     const startDecimal = ipv6ToDecimal(ipaddress) & @truncate(u128, createNetMask(u129, 128, netmask));
     const endDecimal = math.pow(u32, 2, 128 - netmask) + startDecimal - 1;
-    return IPv6Range.init(decimalToIpv6(startDecimal), decimalToIpv6(endDecimal));
+    return IPAddressRange.init(decimalToIpv6(startDecimal), decimalToIpv6(endDecimal));
 }
 
-const IPv6Cidr = struct {
-    sections: [8][4]u8,
-    netmask: u8,
-
-    pub fn init(sections: [8][4]u8, netmask: u8) IPv6Cidr {
-        return IPv6Cidr{ .sections = sections, .netmask = netmask };
-    }
-};
-
-pub fn ipv6RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]IPv6Cidr {
+pub fn ipv6RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]Cidr {
     var start = ipv6ToDecimal(range[0]);
     const end = ipv6ToDecimal(range[1]);
-    var cidr = std.ArrayList(IPv6Cidr).init(allocator);
+    var cidr = std.ArrayList(Cidr).init(allocator);
     while (end >= start) {
         var maxSize: u8 = 128;
         while (maxSize > 0) {
@@ -203,7 +187,7 @@ pub fn ipv6RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]IP
         if (maxSize < diff) {
             maxSize = diff;
         }
-        try cidr.append(IPv6Cidr.init(decimalToIpv6(start), maxSize));
+        try cidr.append(Cidr.init(decimalToIpv6(start), maxSize));
         start += @truncate(u128, math.pow(u129, 2, 128 - maxSize));
     }
 
@@ -229,8 +213,8 @@ fn assertIpv4(actual: [4]u8, expected: [4]u8) !void {
     try testing.expect(actual[3] == expected[3]);
 }
 
-fn assertIpv4Cidr(actual: IPv4Cidr, expected_sections: [4]u8, expected_netmask: u8) !void {
-    try assertIpv4(actual.sections, expected_sections);
+fn assertIpv4Cidr(actual: Cidr, expected_sections: [4]u8, expected_netmask: u8) !void {
+    try assertIpv4(actual.sections.v4, expected_sections);
     try testing.expect(actual.netmask == expected_netmask);
 }
 
@@ -240,13 +224,13 @@ test "IPv4 to Decimal" {
 
 test "Decimal to IPv4" {
     var ipv4 = decimalToIpv4(3232235521);
-    try assertIpv4(ipv4, .{ 192, 168, 0, 1 });
+    try assertIpv4(ipv4.v4, .{ 192, 168, 0, 1 });
 }
 
 test "Cidr to IPv4 range" {
     var range = cidrToIpv4Range("192.168.0.1/24");
-    try assertIpv4(range.start, .{ 192, 168, 0, 0 });
-    try assertIpv4(range.end, .{ 192, 168, 0, 255 });
+    try assertIpv4(range.start.v4, .{ 192, 168, 0, 0 });
+    try assertIpv4(range.end.v4, .{ 192, 168, 0, 255 });
 }
 
 test "IPv4 range to cidr" {
@@ -274,8 +258,8 @@ fn assertIpv6(actual: [8][4]u8, expected: [8][]const u8) !void {
     }
 }
 
-fn assertIpv6Cidr(actual: IPv6Cidr, expected_section: [8][]const u8, expected_netmask: u8) !void {
-    try assertIpv6(actual.sections, expected_section);
+fn assertIpv6Cidr(actual: Cidr, expected_section: [8][]const u8, expected_netmask: u8) !void {
+    try assertIpv6(actual.sections.v6, expected_section);
     try testing.expect(actual.netmask == expected_netmask);
 }
 
@@ -290,7 +274,7 @@ test "Hex to Decimal" {
 
 test "Decimal to IPv6" {
     var ipv6 = decimalToIpv6(42541956123769884636017138956568135816);
-    try assertIpv6(ipv6, .{ "2001", "4860", "4860", "0000", "0000", "0000", "0000", "8888" });
+    try assertIpv6(ipv6.v6, .{ "2001", "4860", "4860", "0000", "0000", "0000", "0000", "8888" });
 }
 
 test "IPv6 to Cidr - Simple" {
@@ -341,6 +325,6 @@ test "IPv6 to Cidr - Complex" {
 
 test "Cidr to IPv6 range" {
     var range = cidrToIpv6Range("2001:4860:4860:0:0:0:0:8888/127");
-    try assertIpv6(range.start, .{ "2001", "4860", "4860", "0000", "0000", "0000", "0000", "8888" });
-    try assertIpv6(range.end, .{ "2001", "4860", "4860", "0000", "0000", "0000", "0000", "8889" });
+    try assertIpv6(range.start.v6, .{ "2001", "4860", "4860", "0000", "0000", "0000", "0000", "8888" });
+    try assertIpv6(range.end.v6, .{ "2001", "4860", "4860", "0000", "0000", "0000", "0000", "8889" });
 }
