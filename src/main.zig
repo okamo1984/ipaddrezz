@@ -180,6 +180,10 @@ pub fn cidrToIpv6Range(cidr: []const u8) IPv6Range {
 const IPv6Cidr = struct {
     sections: [8][4]u8,
     netmask: u8,
+
+    pub fn init(sections: [8][4]u8, netmask: u8) IPv6Cidr {
+        return IPv6Cidr{ .sections = sections, .netmask = netmask };
+    }
 };
 
 pub fn ipv6RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]IPv6Cidr {
@@ -199,7 +203,7 @@ pub fn ipv6RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]IP
         if (maxSize < diff) {
             maxSize = diff;
         }
-        try cidr.append(IPv6Cidr{ .sections = decimalToIpv6(start), .netmask = maxSize });
+        try cidr.append(IPv6Cidr.init(decimalToIpv6(start), maxSize));
         start += @truncate(u128, math.pow(u129, 2, 128 - maxSize));
     }
 
