@@ -34,7 +34,7 @@ fn ipv4ToDecimal(ipv4: []const u8) u32 {
 }
 
 fn decimalToIpv4(decimal: u32) [4]u8 {
-    return [4]u8{ getIpv4Section(decimal, 24), getIpv4Section(decimal, 16), getIpv4Section(decimal, 8), getIpv4Section(decimal, 0) };
+    return .{ getIpv4Section(decimal, 24), getIpv4Section(decimal, 16), getIpv4Section(decimal, 8), getIpv4Section(decimal, 0) };
 }
 
 fn getIpv4Section(decimal: u32, mask: u5) u8 {
@@ -45,19 +45,40 @@ fn createNetMask(comptime T: type, max: T, size: T) T {
     return math.pow(T, 2, max) - math.pow(T, 2, max - size);
 }
 
-pub fn cidrToIpv4Range(cidr: []const u8) [2][4]u8 {
+const IPv4Range = struct {
+    start: [4]u8,
+    end: [4]u8,
+
+    pub fn init(start: [4]u8, end: [4]u8) IPv4Range {
+        return IPv4Range{
+            .start = start,
+            .end = end,
+        };
+    }
+};
+
+pub fn cidrToIpv4Range(cidr: []const u8) IPv4Range {
     var split_it = std.mem.split(u8, cidr, "/");
     const ipaddress = split_it.next().?;
     const netmask = stringToUint8(split_it.next() orelse "32");
     const startDecimal = ipv4ToDecimal(ipaddress) & @truncate(u32, createNetMask(u33, 32, netmask));
     const endDecimal = math.pow(u32, 2, 32 - netmask) + startDecimal - 1;
-    return [2][4]u8{ decimalToIpv4(startDecimal), decimalToIpv4(endDecimal) };
+    return IPv4Range.init(decimalToIpv4(startDecimal), decimalToIpv4(endDecimal));
 }
 
-pub fn ipv4RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![][5]u8 {
+const IPv4Cidr = struct {
+    sections: [4]u8,
+    netmask: u8,
+
+    pub fn init(sections: [4]u8, netmask: u8) IPv4Cidr {
+        return IPv4Cidr{ .sections = sections, .netmask = netmask };
+    }
+};
+
+pub fn ipv4RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![]IPv4Cidr {
     var start = ipv4ToDecimal(range[0]);
     const end = ipv4ToDecimal(range[1]);
-    var cidr = std.ArrayList([5]u8).init(allocator);
+    var cidr = std.ArrayList(IPv4Cidr).init(allocator);
     while (end >= start) {
         var maxSize: u8 = 32;
         while (maxSize > 0) {
@@ -71,11 +92,7 @@ pub fn ipv4RangeToCidr(allocator: std.mem.Allocator, range: [2][]const u8) ![][5
         if (maxSize < diff) {
             maxSize = diff;
         }
-        var dest: [5]u8 = undefined;
-        const ipv4 = decimalToIpv4(start);
-        for (ipv4[0..]) |b, i| dest[i] = b;
-        dest[4] = maxSize;
-        try cidr.append(dest);
+        try cidr.append(IPv4Cidr.init(decimalToIpv4(start), maxSize));
         start += @truncate(u32, math.pow(u33, 2, 32 - maxSize));
     }
 
@@ -208,12 +225,9 @@ fn assertIpv4(actual: [4]u8, expected: [4]u8) !void {
     try testing.expect(actual[3] == expected[3]);
 }
 
-fn assertIpv4Cidr(actual: [5]u8, expected: [5]u8) !void {
-    try testing.expect(actual[0] == expected[0]);
-    try testing.expect(actual[1] == expected[1]);
-    try testing.expect(actual[2] == expected[2]);
-    try testing.expect(actual[3] == expected[3]);
-    try testing.expect(actual[4] == expected[4]);
+fn assertIpv4Cidr(actual: IPv4Cidr, expected_sections: [4]u8, expected_netmask: u8) !void {
+    try assertIpv4(actual.sections, expected_sections);
+    try testing.expect(actual.netmask == expected_netmask);
 }
 
 test "IPv4 to Decimal" {
@@ -222,27 +236,26 @@ test "IPv4 to Decimal" {
 
 test "Decimal to IPv4" {
     var ipv4 = decimalToIpv4(3232235521);
-    try assertIpv4(ipv4, [4]u8{ 192, 168, 0, 1 });
+    try assertIpv4(ipv4, .{ 192, 168, 0, 1 });
 }
 
 test "Cidr to IPv4 range" {
     var range = cidrToIpv4Range("192.168.0.1/24");
-    try testing.expect(range.len == 2);
-    try assertIpv4(range[0], [4]u8{ 192, 168, 0, 0 });
-    try assertIpv4(range[1], [4]u8{ 192, 168, 0, 255 });
+    try assertIpv4(range.start, .{ 192, 168, 0, 0 });
+    try assertIpv4(range.end, .{ 192, 168, 0, 255 });
 }
 
 test "IPv4 range to cidr" {
     var allocator = testing.allocator;
-    var cidr = try ipv4RangeToCidr(allocator, [2][]const u8{ "192.168.0.1", "192.168.0.10" });
+    var cidr = try ipv4RangeToCidr(allocator, .{ "192.168.0.1", "192.168.0.10" });
     defer allocator.free(cidr);
     try testing.expect(cidr.len == 5);
 
-    try assertIpv4Cidr(cidr[0], [5]u8{ 192, 168, 0, 1, 32 });
-    try assertIpv4Cidr(cidr[1], [5]u8{ 192, 168, 0, 2, 31 });
-    try assertIpv4Cidr(cidr[2], [5]u8{ 192, 168, 0, 4, 30 });
-    try assertIpv4Cidr(cidr[3], [5]u8{ 192, 168, 0, 8, 31 });
-    try assertIpv4Cidr(cidr[4], [5]u8{ 192, 168, 0, 10, 32 });
+    try assertIpv4Cidr(cidr[0], .{ 192, 168, 0, 1 }, 32);
+    try assertIpv4Cidr(cidr[1], .{ 192, 168, 0, 2 }, 31);
+    try assertIpv4Cidr(cidr[2], .{ 192, 168, 0, 4 }, 30);
+    try assertIpv4Cidr(cidr[3], .{ 192, 168, 0, 8 }, 31);
+    try assertIpv4Cidr(cidr[4], .{ 192, 168, 0, 10 }, 32);
 }
 
 fn assertIpv6Section(actual: [4]u8, expected: []const u8) !void {
