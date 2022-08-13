@@ -79,7 +79,7 @@ fn createNetMask(comptime T: type, max: T, size: T) T {
     return math.pow(T, 2, max) - math.pow(T, 2, max - size);
 }
 
-const IPAddressRange = struct {
+pub const IPAddressRange = struct {
     start: IPAddress,
     end: IPAddress,
 
@@ -117,7 +117,7 @@ pub fn cidrToIpv4Range(cidr: []const u8) IPAddressRange {
     return IPAddressRange.init(decimalToIpv4(startDecimal), decimalToIpv4(endDecimal));
 }
 
-const Cidr = struct {
+pub const Cidr = struct {
     address: IPAddress,
     netmask: u8,
 
