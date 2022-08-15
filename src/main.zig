@@ -27,6 +27,12 @@ const IPAddress = union(IPAddressTag) {
         }
     }
 
+    pub fn bufPrint(self: Self, buffer: anytype) ![]const u8 {
+        var fbs = std.io.fixedBufferStream(buffer);
+        try self.print(fbs.writer());
+        return fbs.getWritten();
+    }
+
     pub fn isV4(self: Self) bool {
         return self == IPAddressTag.v4;
     }
@@ -310,6 +316,13 @@ test "Print IPv4 cidr" {
     var fbs = std.io.fixedBufferStream(&buffer);
     try cidr.print(fbs.writer());
     try testing.expect(std.mem.eql(u8, fbs.getWritten(), "192.168.0.0/24"));
+}
+
+test "Print IPv4 to buffer" {
+    const ipv4 = IPAddress{ .v4 = .{ 192, 168, 0, 0 } };
+    var buffer: [15]u8 = undefined;
+    const s = try ipv4.bufPrint(&buffer);
+    try testing.expect(std.mem.eql(u8, s, "192.168.0.0"));
 }
 
 fn assertIpv6Section(actual: [4]u8, expected: []const u8) !void {
